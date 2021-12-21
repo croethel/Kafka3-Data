@@ -1,12 +1,15 @@
 from kafka import KafkaConsumer, TopicPartition
 from json import loads
+import psycopg2
+from psycopg2._psycopg import cursor
+
 
 class XactionConsumer:
     def __init__(self):
         self.consumer = KafkaConsumer('bank-customer-events',
-            bootstrap_servers=['localhost:9092'],
-            # auto_offset_reset='earliest',
-            value_deserializer=lambda m: loads(m.decode('ascii')))
+                                      bootstrap_servers=['localhost:9092'],
+                                      # auto_offset_reset='earliest',
+                                      value_deserializer=lambda m: loads(m.decode('ascii')))
         ## These are two python dictionarys
         # Ledger is the one where all the transaction get posted
         self.ledger = {}
@@ -16,8 +19,22 @@ class XactionConsumer:
         # THE PROBLEM is every time we re-run the Consumer, ALL our customer
         # data gets lost!
         # add a way to connect to your database here.
+        self.con = psycopg2.connect(#insert connection info here)
+        print("Database opened successfully")
 
-        #Go back to the readme.
+        self.cur = self.con.cursor()
+
+        self.cur.execute('''DROP TABLE IF EXISTS BANK;
+                        CREATE TABLE BANK 
+                        (CUSTID INT NOT NULL,
+                        TYPE TEXT NOT NULL,
+                        DATE INT NOT NULL,
+                        AMT INT NOT NULL);''')
+        print("Table created successfully")
+
+
+
+        self.con.commit()
 
     def handleMessages(self):
         for message in self.consumer:
@@ -32,6 +49,13 @@ class XactionConsumer:
             else:
                 self.custBalances[message['custid']] -= message['amt']
             print(self.custBalances)
+
+            cur = self.con.cursor()
+
+            bank_model = (message['custid'], message['type'], message['date'], message['amt'])
+            cur.execute("insert into BANK(custid, type, date, amt) VALUES(%s,%s,%s,%s);", bank_model)
+
+            self.con.commit()
 
 if __name__ == "__main__":
     c = XactionConsumer()
